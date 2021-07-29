@@ -31,8 +31,8 @@ extern "C"
 
 	int rtsp_do_event(rtsp_demo_handle demo);
 
-	rtsp_session_handle rtsp_new_session(rtsp_demo_handle demo, const char *path);
-	rtsp_session_handle create_rtsp_session(rtsp_demo_handle demo, const char *path);
+	// if the username and password are empty, authentication is disabled
+	rtsp_session_handle rtsp_new_session(rtsp_demo_handle demo, const char *path, const char *username, const char *password);
 
 	int rtsp_set_video(rtsp_session_handle session, int codec_id, const uint8_t *codec_data, int data_len);
 	int rtsp_set_audio(rtsp_session_handle session, int codec_id, const uint8_t *codec_data, int data_len);
@@ -45,7 +45,7 @@ extern "C"
 
 	uint64_t rtsp_get_reltime(void);
 	uint64_t rtsp_get_ntptime(void);
-	
+
 	int rtsp_sync_video_ts(rtsp_session_handle session, uint64_t ts, uint64_t ntptime);
 	int rtsp_sync_audio_ts(rtsp_session_handle session, uint64_t ts, uint64_t ntptime);
 

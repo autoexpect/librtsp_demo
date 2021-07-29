@@ -181,10 +181,19 @@ extern "C"
 #define RTSP_MSG_ACCEPT_MHEG (1 << RTSP_MSG_CONTENT_TYPE_MHEG)
 	} rtsp_msg_accept_s;
 
+	//WWW-Authenticate R opt. all
+	typedef struct __rtsp_msg_www_authenticate_s
+	{
+		char realm[64];
+		char nonce[64];
+	} rtsp_msg_www_authenticate_s;
+
 	//Authorization R opt. all
 	typedef struct __rtsp_msg_authorization_s
 	{
-		char authorization[128];
+		char username[64];
+		char uri[64];
+		char response[64];
 	} rtsp_msg_authorization_s;
 
 	//User-Agent R opt. all
@@ -266,12 +275,13 @@ extern "C"
 
 		//request-headers
 		rtsp_msg_accept_s *accept;
-		rtsp_msg_authorization_s *authorization;
+		rtsp_msg_www_authenticate_s *www_authenticate;
 		rtsp_msg_user_agent_s *user_agent;
 
 		//response-headers
 		rtsp_msg_public_s *public_;
 		rtsp_msg_rtp_info_s *rtp_info;
+		rtsp_msg_authorization_s *authorization;
 		rtsp_msg_server_s *server;
 
 		//entity-headers
@@ -332,6 +342,9 @@ extern "C"
 	int rtsp_msg_set_content_type(rtsp_msg_s *msg, int type);
 	int rtsp_msg_get_content_length(const rtsp_msg_s *msg, int *length);
 	int rtsp_msg_set_content_length(rtsp_msg_s *msg, int length);
+	int rtsp_msg_set_www_authenticate(rtsp_msg_s *msg, char *nonce, char *realm);
+	const char *rtsp_req_msg_method_int2str(int intval);
+	int rtsp_req_msg_method_str2int(const char *str);
 
 	uint32_t rtsp_msg_gen_session_id(void);
 

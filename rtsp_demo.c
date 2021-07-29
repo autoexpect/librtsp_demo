@@ -11,9 +11,12 @@
 #include "queue.h"
 #include "stream_queue.h"
 #include "utils.h"
+#include "md5.h"
 
 //TODO LIST 20160529
 //support authentication
+
+#define REALM "rtsp_demo"
 
 #ifdef __WIN32__
 #define MSG_DONTWAIT 0
@@ -62,6 +65,10 @@ TAILQ_HEAD(rtsp_client_connection_queue_head, rtsp_client_connection);
 struct rtsp_session
 {
 	char path[64];
+	char username[64];
+	char password[64];
+	char realm[64];
+	char nonce[33];
 	int vcodec_id;
 	int acodec_id;
 
@@ -479,10 +486,25 @@ static int rtsp_path_match(const char *main_path, const char *full_path)
 	return 1;
 }
 
-rtsp_session_handle rtsp_new_session(rtsp_demo_handle demo, const char *path)
+static void rand_str(char *dest, size_t length)
+{
+	char charset[] = "0123456789"
+					 "abcdefghijklmnopqrstuvwxyz"
+					 "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+	while (length-- > 0)
+	{
+		size_t index = (double)rand() / RAND_MAX * (sizeof charset - 1);
+		*dest++ = charset[index];
+	}
+	*dest = '\0';
+}
+
+rtsp_session_handle rtsp_new_session(rtsp_demo_handle demo, const char *path, const char *username, const char *password)
 {
 	struct rtsp_demo *d = (struct rtsp_demo *)demo;
 	struct rtsp_session *s = NULL;
+	char nonce[33];
 
 	if (!d || !path || strlen(path) == 0)
 	{
@@ -506,6 +528,21 @@ rtsp_session_handle rtsp_new_session(rtsp_demo_handle demo, const char *path)
 	}
 
 	strncpy(s->path, path, sizeof(s->path) - 1);
+
+	memset(s->username, 0, sizeof(s->username));
+	memset(s->password, 0, sizeof(s->password));
+
+	memset(s->realm, 0, sizeof(s->realm));
+	memset(s->nonce, 0, sizeof(s->nonce));
+
+	strncpy(s->username, username, strlen(username));
+	strncpy(s->password, password, strlen(password));
+
+	strncpy(s->realm, REALM, strlen(REALM));
+
+	rand_str(nonce, sizeof(nonce) - 1);
+	strncpy(s->nonce, nonce, strlen(nonce));
+
 	s->vcodec_id = RTSP_CODEC_ID_NONE;
 	s->acodec_id = RTSP_CODEC_ID_NONE;
 
@@ -517,17 +554,6 @@ fail:
 		free(s);
 	}
 	return NULL;
-}
-
-rtsp_session_handle create_rtsp_session(rtsp_demo_handle demo, const char *path)
-{
-	rtsp_session_handle session;
-	session = rtsp_new_session(demo, path);
-
-	rtsp_set_video(session, RTSP_CODEC_ID_VIDEO_H264, NULL, 0);
-	//rtsp_set_audio(session, RTSP_CODEC_ID_AUDIO_G711A, NULL, 0);
-
-	return session;
 }
 
 #define RTP_MAX_PKTSIZ ((1500 - 42) / 4 * 4)
@@ -784,6 +810,17 @@ static int rtsp_handle_DESCRIBE(struct rtsp_client_connection *cc, const rtsp_ms
 		rtsp_msg_set_response(resmsg, 406);
 		warn("client not support accept SDP\n");
 		return 0;
+	}
+
+	//check auth
+	if (strlen(s->username) != 0 && strlen(s->password) != 0)
+	{
+		if (!reqmsg->hdrs.authorization)
+		{
+			rtsp_msg_set_www_authenticate(resmsg, s->nonce, REALM);
+			rtsp_msg_set_response(resmsg, 401);
+			return 0;
+		}
 	}
 
 	//build uri
@@ -1165,9 +1202,6 @@ static int rtsp_handle_TEARDOWN(struct rtsp_client_connection *cc, const rtsp_ms
 	return 0;
 }
 
-/*
-rtsp  ���� rtsp������
-*/
 static int rtsp_process_request(struct rtsp_client_connection *cc, const rtsp_msg_s *reqmsg, rtsp_msg_s *resmsg)
 {
 	struct rtsp_demo *d = cc->demo;
@@ -1223,6 +1257,49 @@ static int rtsp_process_request(struct rtsp_client_connection *cc, const rtsp_ms
 			return 0;
 		}
 		__client_connection_bind_session(cc, s);
+	}
+
+	//check auth
+	if (s)
+	{
+		if (strlen(s->username) != 0 && strlen(s->password) != 0)
+		{
+			if (reqmsg->hdrs.startline.reqline.method != RTSP_MSG_METHOD_OPTIONS &&
+				reqmsg->hdrs.startline.reqline.method != RTSP_MSG_METHOD_DESCRIBE)
+			{
+				if (!reqmsg->hdrs.authorization)
+				{
+					rtsp_msg_set_www_authenticate(resmsg, s->nonce, REALM);
+					rtsp_msg_set_response(resmsg, 401);
+					return 0;
+				}
+				else
+				{
+					char ha1_str[128];
+					char ha1_str_md5[48];
+					char ha2_str[128];
+					char ha2_str_md5[48];
+					char response_str[196];
+					char response_str_md5[48];
+
+					snprintf(ha1_str, sizeof(ha1_str), "%s:%s:%s", s->username, s->realm, s->password);
+					md5(ha1_str, strlen((char *)ha1_str), ha1_str_md5);
+
+					snprintf(ha2_str, sizeof(ha2_str), "%s:%s", rtsp_req_msg_method_int2str(reqmsg->hdrs.startline.reqline.method), reqmsg->hdrs.authorization->uri);
+					md5(ha2_str, strlen((char *)ha2_str), ha2_str_md5);
+
+					snprintf(response_str, sizeof(response_str), "%s:%s:%s", ha1_str_md5, s->nonce, ha2_str_md5);
+					md5(response_str, strlen((char *)response_str), response_str_md5);
+
+					if (strcmp(response_str_md5, reqmsg->hdrs.authorization->response) != 0)
+					{
+						rtsp_msg_set_www_authenticate(resmsg, s->nonce, REALM);
+						rtsp_msg_set_response(resmsg, 401);
+						return 0;
+					}
+				}
+			}
+		}
 	}
 
 	switch (reqmsg->hdrs.startline.reqline.method)
@@ -1614,7 +1691,6 @@ int rtsp_do_event(rtsp_demo_handle demo)
 	tv.tv_sec = 0;
 	tv.tv_usec = 0;
 
-	//rtp rtcp �ķ��� ����ռ���
 	ret = select(maxfd + 1, &rfds, &wfds, NULL, &tv);
 	if (ret < 0)
 	{
@@ -1634,12 +1710,12 @@ int rtsp_do_event(rtsp_demo_handle demo)
 
 	cc = TAILQ_FIRST(&d->connections_qhead); //NOTE do not use TAILQ_FOREACH
 	while (cc)
-	{ //����rtsp_client_connection
+	{
 		struct rtsp_client_connection *cc1 = cc;
-		struct rtsp_session *s = cc1->session;	 //�����ӵ�rtsp session
-		struct rtp_connection *vrtp = cc1->vrtp; //�����ӵ�rtp session ��Ƶ
+		struct rtsp_session *s = cc1->session;
+		struct rtp_connection *vrtp = cc1->vrtp;
 		struct rtp_connection *artp = cc1->artp;
-		cc = TAILQ_NEXT(cc, demo_entry); //��һ��rtsp_client_connection
+		cc = TAILQ_NEXT(cc, demo_entry);
 
 		if (FD_ISSET(cc1->sockfd, &rfds))
 		{

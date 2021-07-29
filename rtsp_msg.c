@@ -131,6 +131,34 @@ static const rtsp_msg_int2str_tbl_s rtsp_msg_method_tbl[] = {
 	},
 };
 
+const char *rtsp_req_msg_method_int2str(int intval)
+{
+	int i;
+	int num;
+
+	num = ARRAY_SIZE(rtsp_msg_method_tbl);
+	for (i = 0; i < num; i++)
+	{
+		if (intval == rtsp_msg_method_tbl[i].intval)
+			return rtsp_msg_method_tbl[i].strval;
+	}
+	return rtsp_msg_method_tbl[num - 1].strval;
+}
+
+int rtsp_req_msg_method_str2int(const char *str)
+{
+	int i;
+	int num;
+
+	num = ARRAY_SIZE(rtsp_msg_method_tbl);
+	for (i = 0; i < num; i++)
+	{
+		if (strncmp(rtsp_msg_method_tbl[i].strval, str, rtsp_msg_method_tbl[i].strsiz) == 0)
+			return rtsp_msg_method_tbl[i].intval;
+	}
+	return rtsp_msg_method_tbl[num - 1].intval;
+}
+
 static const rtsp_msg_int2str_tbl_s rtsp_msg_uri_scheme_tbl[] = {
 	{RTSP_MSG_URI_SCHEME_RTSPU, 6, "rtspu:"},
 	{RTSP_MSG_URI_SCHEME_RTSP, 5, "rtsp:"},
@@ -544,12 +572,49 @@ static int rtsp_msg_build_range(const rtsp_msg_s *msg, char *line, int size)
 //Authorization
 static int rtsp_msg_parse_authorization(rtsp_msg_s *msg, const char *line)
 {
-	return 0; //TODO
+	rtsp_msg_hdr_s *hdrs = &msg->hdrs;
+	const char *p;
+
+	if (hdrs->authorization)
+	{
+		rtsp_mem_free(hdrs->authorization);
+		hdrs->authorization = NULL;
+	}
+	hdrs->authorization = (rtsp_msg_authorization_s *)rtsp_mem_alloc(sizeof(rtsp_msg_authorization_s));
+	if (!hdrs->authorization)
+	{
+		err("rtsp_mem_alloc for authorization failed\n");
+		return -1;
+	}
+
+	if ((p = strstr(line, "username=")))
+	{
+		sscanf(p, "username=\"%[^\"]\"", hdrs->authorization->username);
+	}
+
+	if ((p = strstr(line, "uri=")))
+	{
+		sscanf(p, "uri=\"%[^\"]\"", hdrs->authorization->uri);
+	}
+
+	if ((p = strstr(line, "response=")))
+	{
+		sscanf(p, "response=\"%[^\"]\"", hdrs->authorization->response);
+	}
+	return 0;
 }
 
-static int rtsp_msg_build_authorization(const rtsp_msg_s *msg, char *line, int size)
+static int rtsp_msg_build_www_authenticate(const rtsp_msg_s *msg, char *line, int size)
 {
-	return 0; //TODO
+	const rtsp_msg_hdr_s *hdrs = &msg->hdrs;
+	if (hdrs->www_authenticate)
+	{
+		char *p = line;
+		sprintf(p, "WWW-Authenticate: Digest realm=\"%s\", nonce=\"%s\", algorithm=\"MD5\", stale=\"FALSE\"\r\n", hdrs->www_authenticate->realm, hdrs->www_authenticate->nonce);
+		return strlen(p);
+	}
+
+	return 0;
 }
 
 //RTP-Info
@@ -888,7 +953,8 @@ void rtsp_msg_free(rtsp_msg_s *msg)
 
 	if (msg->hdrs.accept)
 		rtsp_mem_free(msg->hdrs.accept);
-	//TODO free authorization
+	if (msg->hdrs.www_authenticate)
+		rtsp_mem_free(msg->hdrs.www_authenticate);
 	if (msg->hdrs.user_agent)
 		rtsp_mem_free(msg->hdrs.user_agent);
 
@@ -898,6 +964,8 @@ void rtsp_msg_free(rtsp_msg_s *msg)
 	if (msg->hdrs.server)
 		rtsp_mem_free(msg->hdrs.server);
 
+	if (msg->hdrs.authorization)
+		rtsp_mem_free(msg->hdrs.authorization);
 	if (msg->hdrs.content_type)
 		rtsp_mem_free(msg->hdrs.content_type);
 	if (msg->hdrs.content_length)
@@ -1113,7 +1181,7 @@ int rtsp_msg_build_to_array(const rtsp_msg_s *msg, void *data, int size)
 	MSG_BUILD_LINE(range);
 
 	MSG_BUILD_LINE(accept);
-	MSG_BUILD_LINE(authorization);
+	MSG_BUILD_LINE(www_authenticate);
 	MSG_BUILD_LINE(user_agent);
 
 	MSG_BUILD_LINE(public_);
@@ -1399,6 +1467,21 @@ int rtsp_msg_set_content_length(rtsp_msg_s *msg, int length)
 	if (!msg->hdrs.content_length)
 		return -1;
 	msg->hdrs.content_length->length = length;
+	return 0;
+}
+
+int rtsp_msg_set_www_authenticate(rtsp_msg_s *msg, char *nonce, char *realm)
+{
+	if (!msg->hdrs.www_authenticate)
+		msg->hdrs.www_authenticate = (rtsp_msg_www_authenticate_s *)rtsp_mem_alloc(sizeof(rtsp_msg_www_authenticate_s));
+	if (!msg->hdrs.www_authenticate)
+		return -1;
+	if (nonce)
+	{
+		strncpy(msg->hdrs.www_authenticate->nonce, nonce, sizeof(msg->hdrs.www_authenticate->nonce) - 1);
+		strncpy(msg->hdrs.www_authenticate->realm, realm, sizeof(msg->hdrs.www_authenticate->realm) - 1);
+	}
+
 	return 0;
 }
 

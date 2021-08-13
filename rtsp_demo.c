@@ -561,6 +561,10 @@ fail:
 #define ARTP_MAX_NBPKTS (10)
 #define VRTP_PT_ID (96)
 #define ARTP_PT_ID (97)
+#define ARTP_PT_ID_PCMA (8)
+#define ARTP_PT_ID_PCMU (0)
+#define ARTP_PT_ID_G726 (2)
+#define ARTP_PT_ID_AAC (102)
 #define VRTSP_SUBPATH "track1"
 #define ARTSP_SUBPATH "track2"
 
@@ -642,6 +646,18 @@ int rtsp_set_audio(rtsp_session_handle session, int codec_id, const uint8_t *cod
 
 	s->acodec_id = codec_id;
 	s->artpe.pt = ARTP_PT_ID;
+	if (RTSP_CODEC_ID_AUDIO_G711A == codec_id){
+		s->artpe.pt = ARTP_PT_ID_PCMA;
+	}
+	if (RTSP_CODEC_ID_AUDIO_G711U == codec_id){
+		s->artpe.pt = ARTP_PT_ID_PCMU;
+	}
+	if (RTSP_CODEC_ID_AUDIO_G726 == codec_id){
+		s->artpe.pt = ARTP_PT_ID_G726;
+	}
+	if (RTSP_CODEC_ID_AUDIO_AAC == codec_id){
+		s->artpe.pt = ARTP_PT_ID_AAC;
+	}
 	s->artpe.seq = 0;
 	s->artpe.ssrc = 0;
 	s->artpe.sample_rate = 8000;
@@ -757,16 +773,16 @@ static int build_simple_sdp(struct rtsp_session *s, const char *uri, char *sdpbu
 		switch (s->acodec_id)
 		{
 		case RTSP_CODEC_ID_AUDIO_G711A:
-			p += rtsp_build_sdp_media_attr_g711a(ARTP_PT_ID, s->artpe.sample_rate, p, maxlen - (p - sdpbuf));
+			p += rtsp_build_sdp_media_attr_g711a(ARTP_PT_ID_PCMA, s->artpe.sample_rate, p, maxlen - (p - sdpbuf));
 			break;
 		case RTSP_CODEC_ID_AUDIO_G711U:
-			p += rtsp_build_sdp_media_attr_g711u(ARTP_PT_ID, s->artpe.sample_rate, p, maxlen - (p - sdpbuf));
+			p += rtsp_build_sdp_media_attr_g711u(ARTP_PT_ID_PCMU, s->artpe.sample_rate, p, maxlen - (p - sdpbuf));
 			break;
 		case RTSP_CODEC_ID_AUDIO_G726:
-			p += rtsp_build_sdp_media_attr_g726(ARTP_PT_ID, s->artpe.sample_rate, &s->acodec_data.g726, p, maxlen - (p - sdpbuf));
+			p += rtsp_build_sdp_media_attr_g726(ARTP_PT_ID_G726, s->artpe.sample_rate, &s->acodec_data.g726, p, maxlen - (p - sdpbuf));
 			break;
 		case RTSP_CODEC_ID_AUDIO_AAC:
-			p += rtsp_build_sdp_media_attr_aac(ARTP_PT_ID, s->artpe.sample_rate, &s->acodec_data.aac, p, maxlen - (p - sdpbuf));
+			p += rtsp_build_sdp_media_attr_aac(ARTP_PT_ID_AAC, s->artpe.sample_rate, &s->acodec_data.aac, p, maxlen - (p - sdpbuf));
 			break;
 		}
 		if (uri)
